@@ -1,0 +1,220 @@
+﻿<!DOCTYPE html>
+
+<html lang="kk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ФС PaoPao — Физика (қазақша)</title>
+<style>
+  :root{ --bg1:#d9f1ff; --bg2:#ffffff; --card:#ffffff; --accent:#007acc; --text:#07203a; --muted:#4b5563 }
+  *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+  html,body{height:100%;margin:0}
+  body{
+    background: linear-gradient(135deg, var(--bg1), var(--bg2));
+    color:var(--text);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .wrap{ width:min(980px,98vw); }
+  header{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap }
+  .title{ font-size:20px; font-weight:700 }
+  .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+  button{ background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:600 }
+  button.ghost{ background:transparent; color:var(--text); border:1px solid rgba(7,32,58,0.08) }
+  .info{ display:flex; gap:12px; align-items:center; color:var(--muted); font-size:14px }
+  .board-wrap{ background: rgba(255,255,255,0.6); border-radius:12px; padding:12px; box-shadow: 0 10px 30px rgba(2,6,23,0.08) }
+  .board{ display:grid; gap:10px; justify-content:center; margin-top:8px }
+  .tile{ background:var(--card); border:2px solid rgba(7,32,58,0.08); border-radius:10px; padding:8px; min-height:64px; display:flex; align-items:center; justify-content:center; text-align:center; cursor:pointer; user-select:none; font-size:14px }
+  .tile.small{ font-size:13px; }
+  .tile.hidden{ visibility:hidden; pointer-events:none }
+  .tile.selected{ outline:3px solid rgba(0,122,204,0.12); transform:translateY(-4px); box-shadow:0 12px 24px rgba(2,6,23,0.06) }
+  .tile.hint{ outline:3px dashed rgba(0,122,204,0.16) }
+  .footer{ margin-top:12px; color:var(--muted); font-size:13px; text-align:center }
+  @media (max-width:720px){ .tile{ min-height:56px; font-size:12px } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="title">ФС PaoPao — Физика (қазақша)</div>
+        <div style="color:var(--muted);font-size:13px">Формула мен өмірлік жағдайды сәйкестіріңіз — функционалдық сауаттылық</div>
+      </div>
+      <div class="controls">
+        <div class="info">⏱ <b id="time">02:00</b> | 🏆 <b id="score">0</b> | 🔁 <b id="pairs">6</b></div>
+        <button id="startBtn">Бастау (6 жұп, 120с)</button>
+        <button id="hintBtn" class="ghost">Көмек (-5 ұпай)</button>
+        <button id="restartBtn" class="ghost">Қайта бастау</button>
+      </div>
+    </header>
+
+    <div class="board-wrap">
+      <div id="board" class="board"></div>
+    </div>
+
+    <div class="footer">Дұрыс жұп — +10 ұпай, қате таңдау — -5 ұпай. Уақыт бітсе ойын аяқталады.</div>
+  </div>
+
+<script>
+(() => {
+  const PAIRS = [
+    {id:1, f:"F = ma", e:"Автобус тоқтағанда алға құлау"},
+    {id:2, f:"p = ρ g h", e:"Судың түбіндегі қысымның артуы"},
+    {id:3, f:"E = q U", e:"Телефонды зарядтау (электр энергиясы беріледі)"},
+    {id:4, f:"P = A / t", e:"Шамның қуаты (жұмыс/уақыт)"},
+    {id:5, f:"v = s / t", e:"Автокөліктің орташа жылдамдығы"},
+    {id:6, f:"Δl = α l ΔT", e:"Темір қызғанда ұзарып кетеді"}
+  ];
+
+  const boardEl = document.getElementById('board');
+  const timeEl = document.getElementById('time');
+  const scoreEl = document.getElementById('score');
+  const pairsEl = document.getElementById('pairs');
+  const startBtn = document.getElementById('startBtn');
+  const hintBtn = document.getElementById('hintBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let tiles = [];
+  let selected = [];
+  let score = 0;
+  let remainingPairs = 6;
+  let timer = null;
+  let seconds = 120;
+
+  function formatTime(s){ const m = Math.floor(s/60).toString().padStart(2,'0'); const sec = (s%60).toString().padStart(2,'0'); return `${m}:${sec}`; }
+
+  function buildDeck(){
+    // Use all PAIRS (6)
+    const deck = [];
+    PAIRS.forEach(p => {
+      deck.push({pairId:p.id, type:'formula', text:p.f});
+      deck.push({pairId:p.id, type:'example', text:p.e});
+    });
+    // shuffle
+    for(let i=deck.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [deck[i],deck[j]] = [deck[j],deck[i]];
+    }
+    return deck;
+  }
+
+  function render(){
+    tiles = [];
+    boardEl.innerHTML = '';
+    const deck = buildDeck();
+    const cols = 3; // 12 cards -> 3 columns x 4 rows fits nicely on small screens
+    boardEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    deck.forEach((d, idx) => {
+      const div = document.createElement('div');
+      div.className = 'tile' + (d.text.length>24 ? ' small' : '');
+      div.innerText = d.text;
+      div.dataset.pairId = d.pairId;
+      div.dataset.type = d.type;
+      div.dataset.index = idx;
+      // initially hide text to show as face-down style (we'll show text but user should match semantics)
+      // But per FS requirement, cards show content directly (not hidden); user matches by reading.
+      div.addEventListener('click', ()=> onTileClick(div));
+      boardEl.appendChild(div);
+      tiles.push(div);
+    });
+    score = 0; remainingPairs = PAIRS.length;
+    scoreEl.textContent = score;
+    pairsEl.textContent = remainingPairs;
+    timeEl.textContent = formatTime(seconds);
+  }
+
+  function onTileClick(el){
+    if(el.classList.contains('hidden')) return;
+    if(el.classList.contains('selected')) return;
+    if(selected.length===2) return;
+    el.classList.add('selected');
+    selected.push(el);
+    if(selected.length===2){
+      setTimeout(checkMatch, 400);
+    }
+  }
+
+  function checkMatch(){
+    const [a,b] = selected;
+    if(a.dataset.pairId === b.dataset.pairId && a.dataset.type !== b.dataset.type){
+      // correct
+      a.classList.add('hidden');
+      b.classList.add('hidden');
+      score += 10;
+      remainingPairs--;
+      pairsEl.textContent = remainingPairs;
+      if(remainingPairs===0){
+        endGame(true);
+      }
+    } else {
+      // incorrect
+      score = Math.max(0, score - 5);
+      a.classList.remove('selected');
+      b.classList.remove('selected');
+    }
+    scoreEl.textContent = score;
+    selected = [];
+  }
+
+  function findHint(){
+    // find first available correct pair and highlight them briefly
+    for(let i=0;i<tiles.length;i++){
+      const a = tiles[i];
+      if(a.classList.contains('hidden')) continue;
+      for(let j=i+1;j<tiles.length;j++){
+        const b = tiles[j];
+        if(b.classList.contains('hidden')) continue;
+        if(a.dataset.pairId === b.dataset.pairId && a.dataset.type !== b.dataset.type){
+          a.classList.add('hint'); b.classList.add('hint');
+          setTimeout(()=>{ a.classList.remove('hint'); b.classList.remove('hint'); }, 1000);
+          score = Math.max(0, score - 5);
+          scoreEl.textContent = score;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function startTimer(){
+    clearInterval(timer);
+    seconds = 120;
+    timeEl.textContent = formatTime(seconds);
+    timer = setInterval(()=>{
+      seconds--;
+      timeEl.textContent = formatTime(seconds);
+      if(seconds<=0){ clearInterval(timer); endGame(false); }
+    }, 1000);
+  }
+
+  function endGame(win){
+    clearInterval(timer);
+    setTimeout(()=>{
+      if(win){
+        alert('Құттықтаймыз! Барлық жұп табылды. Ұпай: ' + score);
+      } else {
+        alert('Уақыт бітті. Ұпай: ' + score);
+      }
+    }, 100);
+  }
+
+  startBtn.addEventListener('click', ()=>{
+    render();
+    startTimer();
+  });
+  hintBtn.addEventListener('click', ()=>{
+    const ok = findHint();
+    if(!ok) alert('Көмек жоқ — бар жұптар шетелген болуы мүмкін.');
+  });
+  restartBtn.addEventListener('click', ()=>{
+    clearInterval(timer);
+    render();
+    timeEl.textContent = formatTime(120);
+    score = 0; scoreEl.textContent = score;
+  });
+
+  // initial render
+  render();
+
+})();</script>
+</body>
+</html>
